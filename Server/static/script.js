@@ -79,6 +79,12 @@ function drawArrow(ctx, fromx, fromy, tox, toy, arrowWidth, color) {
   ctx.restore();
 }
 
+function hex_fixer(hex) {
+  // Normalize the hex code to 6 characters if it's 3 characters
+  return `#${hex.split('').map(char => char + char).join('')}`;
+}
+
+
 async function connectAndUpdate() {
   return new Promise((resolve) => {
     const socket = new WebSocket("ws://" + server_ip + ":" + ws_port);
@@ -108,26 +114,16 @@ async function connectAndUpdate() {
         console.log(raw_array)
         maze_id = raw_array[0]
         raw_array.shift();
-        
-        world = raw_array[0]
-        raw_array.shift();
 
         size = Number(raw_array[0]);
         raw_array.shift();
 
 
-        pixels = "";
+        pixels = [];
         for (let i = 0; i < size; i++) {
-          pixels = pixels + raw_array[0];
+          pixels.push(raw_array[0].match(/.{1,3}/g));
           raw_array.shift();
         }
-        empty_color = raw_array[0];
-        raw_array.shift();
-        wall_color = raw_array[0];
-        raw_array.shift();
-
-        collected_points = raw_array[0]; // not used
-        raw_array.shift();
 
         pixel_size = 100; // default value
 
@@ -138,10 +134,9 @@ async function connectAndUpdate() {
 
         var ctx = canvas.getContext("2d");
 
-        _colors = [empty_color, wall_color];
         for (let y = 0; y < size; y++) {
           for (let x = 0; x < size; x++) {
-            ctx.fillStyle = _colors[pixels[y * size + x]];
+            ctx.fillStyle = hex_fixer(pixels[y][x]);
             ctx.fillRect(
               x * pixel_size,
               y * pixel_size,
@@ -158,13 +153,14 @@ async function connectAndUpdate() {
           switch (data[0]) {
             case "usr":
               data.shift();
-              // user_id, nick, x, y, rot, color, team, collected_points
-              ctx.fillStyle = data[5];
+              // user_id, nick, x, y, dir, color
+              ctx.fillStyle = hex_fixer(data[5]);
+              const offset = 10
               ctx.fillRect(
-                data[2] * pixel_size,
-                data[3] * pixel_size,
-                pixel_size,
-                pixel_size
+                data[2] * pixel_size + offset,
+                data[3] * pixel_size + offset,
+                pixel_size - (offset*2),
+                pixel_size - (offset*2),
               );
               ctx.stroke();
 

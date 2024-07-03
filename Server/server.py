@@ -17,7 +17,7 @@ from datetime import datetime
 class Config:
     use_proxy = False
     proxy_address = "hotncold.ddns.net"
-    
+
     default_size = 100
 
     public_server = "Robo"
@@ -43,7 +43,7 @@ class Place:
     pixels = {}  # place_id:[[]]
     player_data = (
         {}
-    )  # user_id:[x, y, direction, place_id, color, pen_down, last time played, num of points]
+    )  # user_id:[x, y, direction, place_id, color, pen_down, last time played, num of points, moved?]
 
     def get_place_id(user_id: str) -> str:
         try:
@@ -55,11 +55,18 @@ class Place:
         tmp = []
 
         for user_id in list(Place.player_data.keys()):
-            if (
-                Place.player_data[user_id][3] == place_id
-            ):
+            if Place.player_data[user_id][3] == place_id:
                 tmp.append(user_id)
         return tmp
+
+    def get_place_size(place_id: str) -> int:
+        return len(Place.pixels[place_id])
+
+    def create_place(place_id: str, size: int):
+        Place.pixels[place_id] = []
+
+        for _ in range(size):
+            Place.pixels[place_id].append(["fff" for _ in range(size)])
 
     def create_new_user(user_id: str):
         Place.player_data[user_id] = [
@@ -67,34 +74,35 @@ class Place:
             1,  # Y
             0,  # direction
             "",  # place_id
-            "",  # color
-            False, # pen down
+            "f00",  # color
+            False,  # pen down
             0,  # last time played
             0,  # num of points
+            False,  # moved?
         ]
 
-    def join(user_id: str, place_id: str, world: int) -> None:
+    def join(user_id: str, place_id: str) -> None:
         # create new user
         if user_id not in list(Place.player_data.keys()):
             Place.create_new_user(user_id)
 
         # create maze if not found
-        if place_id not in list(Place.mazes.keys()):
+        if place_id not in list(Place.pixels.keys()):
             print("Gen via join")
-            Place.gen_place(place_id, Config.default_level, world)
-            Place.render(place_id, world)
+            Place.create_place(place_id, Config.default_size)
 
         # edit the player data
-        # x, y, direction, place_id, color, pen_down, last time played, num of points
+        # x, y, direction, place_id, color, pen_down, last time played, num of points, moved?
         Place.player_data[user_id] = [
             random.randint(0, len(Place.pixels[place_id]) - 1),  # X
             random.randint(0, len(Place.pixels[place_id]) - 1),  # Y
             0,  # direction
             place_id,  # place_id
-            "",  # color
+            Place.player_data[user_id][4],  # color
             False,  # pen down
             time.time(),  # last time played
             Place.player_data[user_id][8],  # num of points
+            False,  # moved
         ]
 
     def move_player(user_id: str, dir: str) -> None:
@@ -103,193 +111,40 @@ class Place:
             return
 
         place_id: str = Place.get_place_id(user_id)
-        world: int = Place.get_world(user_id)
+        print(user_id)
+        print(place_id)
+        place_size: int = Place.get_place_size(place_id)
 
-        data = Place.player_data[user_id].copy()
-
-        if world == -1 or place_id == "":
+        if place_id == "":
             return
 
-        rot = data[2]
+        rot = Place.player_data[user_id][2]
 
-        if rot == 0:  # up
-            if dir == "forward":
-                if not Place.pixels[place_id][world][data[0]][data[1] - 1] == "w":
-                    Place.player_data[user_id][1] -= 1  # Y
+        # up, right, down, left
+        dirs = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 
-                elif any(
-                    [Place.player_data[user_id][0], Place.player_data[user_id][1] - 1]
-                    == sublist[1:3]
-                    for sublist in Place.keys[place_id][world]
-                ):
-                    Place.tp_player(
-                        user_id,
-                        [
-                            sublist
-                            for sublist in Place.keys[place_id][world]
-                            if [
-                                Place.player_data[user_id][0],
-                                Place.player_data[user_id][1] - 1,
-                            ]
-                            == sublist[1:3]
-                        ][0],
-                    )
+        if dir == "forward":
+            tmp_x = Place.player_data[user_id][0] + dirs[rot][0]
+            tmp_y = Place.player_data[user_id][1] + dirs[rot][1]
 
-            elif dir == "backward":
-                if not Place.pixels[place_id][world][data[0]][data[1] + 1] == "w":
-                    Place.player_data[user_id][1] += 1  # Y
+        elif dir == "backward":
+            tmp_x = Place.player_data[user_id][0] - dirs[rot][0]
+            tmp_y = Place.player_data[user_id][1] - dirs[rot][1]
 
-                elif any(
-                    [Place.player_data[user_id][0], Place.player_data[user_id][1] + 1]
-                    == sublist[1:3]
-                    for sublist in Place.keys[place_id][world]
-                ):
-                    Place.tp_player(
-                        user_id,
-                        [
-                            sublist
-                            for sublist in Place.keys[place_id][world]
-                            if [
-                                Place.player_data[user_id][0],
-                                Place.player_data[user_id][1] + 1,
-                            ]
-                            == sublist[1:3]
-                        ][0],
-                    )
+        if tmp_x < 0 or tmp_x >= place_size:
+            Place.player_data[user_id][8] = False
+            return
 
-        elif rot == 1:  # right
-            if dir == "forward":
-                if not Place.pixels[place_id][world][data[0] + 1][data[1]] == "w":
-                    Place.player_data[user_id][0] += 1  # X
+        if tmp_y < 0 or tmp_y >= place_size:
+            Place.player_data[user_id][8] = False
+            return
 
-                elif any(
-                    [Place.player_data[user_id][0] + 1, Place.player_data[user_id][1]]
-                    == sublist[1:3]
-                    for sublist in Place.keys[place_id][world]
-                ):
-                    Place.tp_player(
-                        user_id,
-                        [
-                            sublist
-                            for sublist in Place.keys[place_id][world]
-                            if [
-                                Place.player_data[user_id][0] + 1,
-                                Place.player_data[user_id][1],
-                            ]
-                            == sublist[1:3]
-                        ][0],
-                    )
-            elif dir == "backward":
-                if not Place.pixels[place_id][world][data[0] - 1][data[1]] == "w":
-                    Place.player_data[user_id][0] -= 1  # X
+        Place.player_data[user_id][8] = True
+        if Place.player_data[user_id][5]:
+            Place.pixels[place_id][Place.player_data[user_id][1]][Place.player_data[user_id][0]] = Place.player_data[user_id][4]
 
-                elif any(
-                    [Place.player_data[user_id][0] - 1, Place.player_data[user_id][1]]
-                    == sublist[1:3]
-                    for sublist in Place.keys[place_id][world]
-                ):
-                    Place.tp_player(
-                        user_id,
-                        [
-                            sublist
-                            for sublist in Place.keys[place_id][world]
-                            if [
-                                Place.player_data[user_id][0] - 1,
-                                Place.player_data[user_id][1],
-                            ]
-                            == sublist[1:3]
-                        ][0],
-                    )
-
-        elif rot == 2:  # down
-            if dir == "forward":
-                if not Place.pixels[place_id][world][data[0]][data[1] + 1] == "w":
-                    Place.player_data[user_id][1] += 1  # Y
-
-                elif any(
-                    [Place.player_data[user_id][0], Place.player_data[user_id][1] + 1]
-                    == sublist[1:3]
-                    for sublist in Place.keys[place_id][world]
-                ):
-                    Place.tp_player(
-                        user_id,
-                        [
-                            sublist
-                            for sublist in Place.keys[place_id][world]
-                            if [
-                                Place.player_data[user_id][0],
-                                Place.player_data[user_id][1] + 1,
-                            ]
-                            == sublist[1:3]
-                        ][0],
-                    )
-
-            elif dir == "backward":
-                if not Place.pixels[place_id][world][data[0]][data[1] - 1] == "w":
-                    Place.player_data[user_id][1] -= 1  # Y
-
-                elif any(
-                    [Place.player_data[user_id][0], Place.player_data[user_id][1] - 1]
-                    == sublist[1:3]
-                    for sublist in Place.keys[place_id][world]
-                ):
-                    Place.tp_player(
-                        user_id,
-                        [
-                            sublist
-                            for sublist in Place.keys[place_id][world]
-                            if [
-                                Place.player_data[user_id][0],
-                                Place.player_data[user_id][1] - 1,
-                            ]
-                            == sublist[1:3]
-                        ][0],
-                    )
-
-        elif rot == 3:  # left
-            if dir == "forward":
-                if not Place.pixels[place_id][world][data[0] - 1][data[1]] == "w":
-                    Place.player_data[user_id][0] -= 1  # X
-
-                elif any(
-                    [Place.player_data[user_id][0] - 1, Place.player_data[user_id][1]]
-                    == sublist[1:3]
-                    for sublist in Place.keys[place_id][world]
-                ):
-                    Place.tp_player(
-                        user_id,
-                        [
-                            sublist
-                            for sublist in Place.keys[place_id][world]
-                            if [
-                                Place.player_data[user_id][0] - 1,
-                                Place.player_data[user_id][1],
-                            ]
-                            == sublist[1:3]
-                        ][0],
-                    )
-
-            elif dir == "backward":
-                if not Place.pixels[place_id][world][data[0] + 1][data[1]] == "w":
-                    Place.player_data[user_id][0] += 1  # X
-
-                elif any(
-                    [Place.player_data[user_id][0] + 1, Place.player_data[user_id][1]]
-                    == sublist[1:3]
-                    for sublist in Place.keys[place_id][world]
-                ):
-                    Place.tp_player(
-                        user_id,
-                        [
-                            sublist
-                            for sublist in Place.keys[place_id][world]
-                            if [
-                                Place.player_data[user_id][0] + 1,
-                                Place.player_data[user_id][1],
-                            ]
-                            == sublist[1:3]
-                        ][0],
-                    )
+        Place.player_data[user_id][0] = tmp_x
+        Place.player_data[user_id][1] = tmp_y
 
     def rotate_player(user_id: str, dir: str) -> None:
         if not user_id in list(Place.player_data.keys()):
@@ -310,132 +165,54 @@ class Place:
         cur_time = time.time()
 
         for user_id in list(Place.player_data.keys()):
-            if not (Place.player_data[user_id][7] + Config.kick_timeout) < cur_time:
+            if not (Place.player_data[user_id][6] + Config.kick_timeout) < cur_time:
                 continue
 
-            if Place.player_data[user_id][3] == "" or Place.player_data[user_id][4] == -1:
+            if (
+                Place.player_data[user_id][3] == ""
+            ):
                 continue
 
             print(f"Kicked {Nicks.get(user_id)} ({user_id})")
             Place.player_data[user_id][3] = ""
-            Place.player_data[user_id][4] = ""
-
-    def render(place_id: str) -> None:
-        size = len(Place.pixels[place_id])
-
-        if not place_id in list(Place.pixels.keys()):
-            Place.pixels[place_id] = []
-
-
-        pixels = [  # create empty array
-            ["000" for _ in range(size)] for _ in range(size)
-        ]
-
-        Place.pixels[place_id] = pixels
 
     def prepare_send(user_id: str, message_id: str) -> str:
-        out = []  # _, left, front, right, x, y, dir, team, num_of_points
+        out = []  # _, x, y, dir, did_move, color, pen_down, num_of_points
+
+        # user_id:[x, y, direction, place_id, color, pen_down, last time played, num of points, moved?]
 
         place_id = Place.get_place_id(user_id)
         nick = Nicks.get(user_id)
 
         if place_id == "":
-            return
+            ""
+        (
+            x,
+            y,
+            direction,
+            place_id,
+            color,
+            pen_down,
+            last_time_played,
+            num_of_points,
+            moved,
+        ) = Place.player_data[user_id]
 
-        x = Place.player_data[user_id][0]
-        y = Place.player_data[user_id][1]
-        dir = Place.player_data[user_id][2]
-
-        team = Place.player_data[user_id][6]
-        num_of_points = Place.player_data[user_id][8]
-
-        if x > 0:
-            p_left = int(Place.mazes[place_id][world][0][x - 1][y])
-        else:
-            p_left = 1  # wall
-
-        if x < rp(Place.mazes[place_id][world][2]):
-            p_right = int(Place.mazes[place_id][world][0][x + 1][y])
-        else:
-            p_right = 1  # wall
-
-        if y > 0:
-            p_up = int(Place.mazes[place_id][world][0][x][y - 1])
-        else:
-            p_up = 1  # wall
-
-        if y < rp(Place.mazes[place_id][world][2]):
-            p_down = int(Place.mazes[place_id][world][0][x][y + 1])
-        else:
-            p_down = 1  # wall
-
-        sens = 0
-
-        if dir == 0:  # facing up
-            sens += 1 * p_up
-            sens += 2 * p_right
-            sens += 4 * p_down
-            sens += 8 * p_left
-        elif dir == 1:  # facing right
-            sens += 1 * p_right
-            sens += 2 * p_down
-            sens += 4 * p_left
-            sens += 8 * p_up
-        elif dir == 2:  # facing down
-            sens += 1 * p_down
-            sens += 2 * p_left
-            sens += 4 * p_right
-            sens += 8 * p_up
-        elif dir == 3:  # facing left
-            sens += 1 * p_left
-            sens += 2 * p_up
-            sens += 4 * p_right
-            sens += 8 * p_down
-
-        min_distance = float("inf")
-        closest_key = None
-
-        for key in [sublist[1:3] for sublist in Place.keys[place_id][world]]:
-            x_k, y_k = key
-            dist = math.sqrt((x_k - x) ** 2 + (y_k - y) ** 2)
-            if dist < min_distance:
-                min_distance = dist
-                closest_key = key
-
-        x_key, y_key = closest_key
-
-        min_distance = float("inf")
-        closest_point = None
-
-        for point in [sublist[:2] for sublist in Place.points[place_id][world]]:
-            x_p, y_p = point
-            dist = math.sqrt((x_p - x) ** 2 + (y_p - y) ** 2)
-            if dist < min_distance:
-                min_distance = dist
-                closest_point = key
-
-        x_point, y_point = closest_point
-
-        #        8      1     1   1      1         1        1       1      1     1      = 17/22
-        # <id> <nick> <size> <x> <y> <x_point> <y_point> <x_key> <y_key> <dir> <sens>
+        #        8     1   1    1      3         1        1     = 16/22
+        # <id> <nick> <x> <y> <dir> <color> <pen_down> <moved>
 
         out.append("_r_")  # random string so i can handle it differently
 
         out.append(str(message_id))  # id
         out.append(str(nick))  # nick
-        out.append(str(rp(Place.mazes[place_id][world][2])))  # size
         out.append(str(x))  # x
         out.append(str(y))  # y
 
-        out.append(str(x_point))  # x_point
-        out.append(str(y_point))  # y_point
+        out.append(str(direction))  # dir
 
-        out.append(str(x_key))  # x_key
-        out.append(str(y_key))  # y_key
-
-        out.append(str(dir))  # dir
-
-        out.append(str(sens))  # sens
+        out.append(str(color))  # color
+        out.append("1" if pen_down else "0")  # pen_down
+        out.append("1" if moved else "0")  # moved
 
         return " ".join(out)
 
@@ -505,6 +282,7 @@ class Save:
             )
 
     def save_all():
+        return
         for file in Save.files:
             if not os.path.exists(f"{Save.folder}{file}{Save.extension}"):
                 continue
@@ -514,10 +292,9 @@ class Save:
                 f"{Save.folder}{cur_time}{file}{Save.extension}",
             )
 
-        Save.save_mazes()
-        Save.save_players()
+        Save.save_places()
 
-    def save_mazes():
+    def save_places():
         tmp = []
         for place_id in list(Place.mazes.keys()):
             tmp.append(f"{place_id}:")
@@ -563,10 +340,9 @@ class Save:
         for file in Save.files:
             if not os.path.exists(f"{Save.folder}{file}{Save.extension}"):
                 return
-        Save.load_mazes()
-        Save.load_players()
+        Save.load_places()
 
-    def load_mazes():
+    def load_places():
         with open(f"{Save.folder}mazes.save", "r") as f:
             lines = [line.replace("\n", "") for line in f.readlines()]
 
@@ -654,8 +430,8 @@ class Save:
                     continue
 
                 if not (
-                    len(world_data[0]) == rp(world_data[2])
-                    or len(world_data[0][0]) == rp(world_data[2])
+                    len(world_data[0]) == world_data[2]
+                    or len(world_data[0][0]) == world_data[2]
                 ):
                     print(f"Wrong size in maze:{place_id} in world:{world}")
                     continue
@@ -734,7 +510,7 @@ class Server:
 
     def handle_cmd(data_in) -> str:
         try:
-            data:list
+            data: list
             data = data_in.strip().split()
             # data = ["serial", "c2c", "move", "forward", "01"]
             user_id = data[0]
@@ -767,7 +543,10 @@ class Server:
                     Place.player_data[user_id][5] = False
                 elif data[3] == "down":
                     Place.player_data[user_id][5] = True
-
+            
+            elif cmd == "color":
+                if len(data[3]) == 3:
+                    Place.player_data[user_id][4] = data[3]
 
             Logger.log(" ".join(data))
 
@@ -811,20 +590,20 @@ class WS:
 
                     resp = []
 
-                    resp.append(place_id)
+                    resp.append(str(place_id))
 
                     resp.append(str(len(Place.pixels[place_id])))  # size
 
                     for r in Place.pixels[place_id]:
-                        row = ",".join(r.split())
-                        resp.append(row)
-
+                        row = "".join(r)
+                        resp.append(str(row))
 
                     for user_id in Place.get_place_users(place_id):
                         data = Place.player_data[user_id]
-                        # usr;[user_id];[nick];[x];[y];[dir][color];[team];[collected_points]
+                        # [x, y, direction, place_id, color, pen_down, last time played, num of points, moved?]
+                        # usr;[user_id];[nick];[x];[y];[dir][color]
                         resp.append(
-                            f"usr;{user_id};{Nicks.get(user_id)};{data[0]};{data[1]};{data[2]};{data[5]};{data[6]};{data[8]}"
+                            f"usr;{user_id};{Nicks.get(user_id)};{data[0]};{data[1]};{data[2]};{data[4]}"
                         )
 
                     await websocket.send("\n".join(resp).strip("\n"))
@@ -859,13 +638,12 @@ def main_page() -> str:
 if __name__ == "__main__":
     Logger.init()
 
-    Save.init()
-    Save.create_backup()
-    Save.load_all()
+    # Save.init()
+    # Save.create_backup()
+    # Save.load_all()
 
-    if not Config.public_server in list(Place.mazes.keys()):
-        Place.gen_place(Config.public_server, Config.default_size)
-        Place.render(Config.public_server)
+    if not Config.public_server in list(Place.pixels.keys()):
+        Place.create_place(Config.public_server, Config.default_size)
 
     Server.edit_script()
 
